@@ -1,0 +1,160 @@
+name: SingleDeploymentwithDataTransfer
+
+tasks: 
+
+#deploy yaml file 
+  - name: TCC-deploy_yaml_file
+    type: foreground
+    templates: 
+      - input: "./resources/services/vs.yaml"
+        output: "./generated/vs.yaml"
+    exec: 
+      timeout: 2m
+      script:
+        cmd: "kubectl"
+        args: ["apply", "-f", "./generated/vs.yaml"]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+
+#tibtunnel configuration & verification
+
+  - name: tibTunnelConfigureWithoutProfileName
+    type: foreground
+    exec:
+      timeout: 5s
+      script:
+        cmd: "/bin/bash"
+        args: ["-c", "./tibtunnel configure -a ${suite.setup.code-injection.accesskey}"]
+        #./tibtunnel configure -a <<accessKey>>
+        capture:
+          stdout:
+            - name: output
+              match: "((?s).*)"
+    expect:
+      - name: output
+        operator: containsStr
+        value: "Configuration for profile 'default' was successfully saved"
+
+  - name: verifyProfileSaved
+    type: foreground
+    exec:
+      timeout: 15s
+      script:
+        cmd: "/bin/bash"
+        args: ["-c", "cd /Users/akusingh/Testing/Tibtunnel_CIC-2 && cat ~/.tibtunnel/credentials"]
+        #./tibtunnel configure -a <<accessKey>>
+        capture:
+          stdout:
+            - name: output
+              match: "((?s).*)"
+    expect:
+      - name: output
+        operator: containsStr
+        value: "${suite.setup.code-injection.accesskey}"
+        
+#final status of our deployed tibcotunnelroute specific
+  - name: state_of_tibcotunnelroute
+    type: foreground
+    exec: 
+      timeout: 30s
+      script: 
+        cmd: "kubectl"
+        args: ["get", "tibcotunnelroute", "${META_DATA_NAME}", "-n", "${NAMESPACE_TENANT}", "-o", "json"]
+        capture: 
+          stdout: 
+            - name : status_cr
+              matchType: jsonpath
+              match: "{.status.resource.state}"
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+      - name: status_cr
+        operator: containsStr
+        value: "processed"
+
+# get all pods running for the specific deployment using labels for that deployment or shall we use for namespace ???
+  - name: status_of_all_client-pods
+    type: foreground
+    exec: 
+      timeout: 30s
+      script: 
+        cmd: "kubectl"
+        args: ["get", "pods", "-n", "${NAMESPACE_TENANT}", "-o", "json", "--selector=app=http"]
+        capture:
+          stdout:
+            - name: running_state
+              matchType: jsonpath
+              match: "{.items[*].status.phase}"
+            - name: capture_pod_name
+              matchType: jsonpath
+              match: "{.items[0].metadata.name}"
+
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+      - name: running_state
+        operator: contains
+        value: "Running"
+
+#start tibtunnel 
+  - name: tibtunnelConnect
+    type: background
+    exec:
+      #timeout: 1m
+      script:
+        cmd: "/bin/bash"
+        args: ["-c", "timeout 40s ./tibtunnel connect -d --remote-debug -s 8081:localhost:8081 https://${FQDN}/${ENDPOINT} -l ./tibtunnelLog" ]
+
+#start tcp-server 
+  - name: startServer
+    type: background
+    exec:
+      #timeout: 1m
+      script:
+        cmd: "/bin/bash"
+        args: ["-c", "timeout 30s ./tcp-server -d -a localhost:8081 >> ./tcpserverLog"]
+        capture:
+          stdout:
+            - name: output
+              match: "((?s).*)"
+          stderr:
+            - name: stderr
+              match: "((?s).*)"
+    expect:
+      - name: stderr
+        operator: containsStr
+        value: "TCP server started"
+
+#data transfer within the pods
+  - name: sendData
+    type: foreground
+    timeout: 3m
+    exec:
+      timeout: 1m
+      script:
+        cmd: "kubectl"
+        args: ["exec", "${status_of_all_client-pods.capture_pod_name}", "-naws-compute-tibco-tenantx", "-c", "main", "--", "/test/tcp-client", "-a", "localhost:8081"]
+        capture:
+          stdout:
+            - name: output
+              match: "((?s).*)"
+          stderr:
+            - name: stderr
+              match: "((?s).*)"              
+    expect:
+      - name: stderr
+        operator: containsStr
+        value: "Successfully send/received 1.0KiB"
+    repeat:
+      count: 0
+      sleep: 5s               
+  - name: sleepCommand
+    type: foreground
+    exec:
+      script:
+        cmd: "sleep"
+        args: ["60"]
