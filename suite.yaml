@@ -1,0 +1,139 @@
+name: suite
+
+setup: 
+
+#download tibtunnel & chmod +x
+  - name: TCC-3377-downloadTibtunnel
+    type: foreground
+    exec:
+      timeout: 10m
+      script:
+        cmd: "/bin/bash"
+        args: ["-c",  "curl -v -O  ${TIBTUNNEL_DARWIN} && chmod +x tibtunnel"]
+        #args: ["-c", "timeout 10s ./tibtunnel connect -d --remote-debug -s 8081:localhost:8081 https://tcds-tunnel.tenant-integration.tcie.pro/tcp-client1 -l ./tibtunnelLog" ]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+
+#download tcp-server & chmod +x
+  - name: downloadTcpServer
+    type: foreground
+    exec:
+      timeout: 10m
+      script:
+        cmd: "/bin/bash"
+        args: ["-c",  "curl -v -O  ${TCP_SERVER_DARWIN} && chmod +x tcp-server"]
+        #args: ["-c", "timeout 10s ./tibtunnel connect -d --remote-debug -s 8081:localhost:8081 https://tcds-tunnel.tenant-integration.tcie.pro/tcp-client1 -l ./tibtunnelLog" ]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+
+#deploy client.yaml with test-service
+  - name: deploy_yaml_file
+    type: foreground
+    templates: 
+      - input: "./resources/services/client-intercom.yaml"
+        output: "./generated/client-intercom.yaml"
+    exec: 
+      timeout: 2m
+      script:
+        cmd: "kubectl"
+        args: ["apply", "-f", "./generated/client-intercom.yaml"]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+
+#hash and Secretkey generation
+  - name: code-injection
+    type: foreground
+    templates:
+      - input: "./resources/services/intercom-key.json"
+        output: "./generated/intercom-key.json"
+    exec:
+      timeout: 30s
+      http:
+        url: "https://${FQDN_DNS}/qa/intercom-client/exec"
+        method: "POST"
+        payload:
+          fromFile: "./generated/intercom-key.json" 
+        capture:
+          body:
+            - name: accesskey
+              matchType: jsonpath
+              match: "{[?(@.type=='http')].data.accessKeySecret}"
+            - name: accesshash
+              matchType: jsonpath
+              match: "{[?(@.type=='http')].data.accessKeyHash}"
+    expect:
+      - name: status
+        operator: equal
+        value: 200
+
+#curl -X POST https://datascience.compute-dev.tcie.pro/qa/intercom-client/exec -d @demo.json
+
+teardown:
+
+# delete the cr_file
+  - name: delete_yaml_file
+    type: foreground
+    exec: 
+      timeout: 1m
+      script:
+        cmd: "kubectl"
+        args: ["delete", "-f", "./generated/vs.yaml"]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+
+# reverify whether deleted or not
+  - name: confirm_deletion
+    type: foreground
+    exec: 
+      timeout: 1m
+      script: 
+        cmd: "kubectl"
+        args: ["get", "tibcotunnelroute", "-n", "${NAMESPACE_TENANT}", "-o", "json"]
+        capture:
+          stdout: 
+            - name: confirm_delete
+              matchType: jsonpath
+              match: "{.items[*].metadata.name}"
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+      - name: confirm_delete
+        operator: notContainsStr
+        value: "${META_DATA_NAME}"
+
+#remove tcp-server_binary
+  - name: rmTcp-server
+    type: foreground
+    exec:
+      timeout: 30s
+      script:
+        cmd: "/bin/bash"
+        args: ["-c", "rm tcp-server"]
+        #args: ["-c", "timeout 10s ./tibtunnel connect -d --remote-debug -s 8081:localhost:8081 https://tcds-tunnel.tenant-integration.tcie.pro/tcp-client1 -l ./tibtunnelLog" ]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
+
+#remove tibtunnel_binary
+  - name: rmTibtunnel
+    type: foreground
+    exec:
+      timeout: 30s
+      script:
+        cmd: "/bin/bash"
+        args: ["-c", "rm tibtunnel"]
+        #args: ["-c", "timeout 10s ./tibtunnel connect -d --remote-debug -s 8081:localhost:8081 https://tcds-tunnel.tenant-integration.tcie.pro/tcp-client1 -l ./tibtunnelLog" ]
+    expect:
+      - name: status
+        operator: equal
+        value: 0
