@@ -37,22 +37,22 @@ tasks:
         operator: containsStr
         value: "Configuration for profile 'default' was successfully saved"
 
-  - name: verifyProfileSaved
-    type: foreground
-    exec:
-      timeout: 15s
-      script:
-        cmd: "/bin/bash"
-        args: ["-c", "cd /Users/akusingh/Testing/Tibtunnel_CIC-2 && cat ~/.tibtunnel/credentials"]
+  # - name: verifyProfileSaved
+  #   type: foreground
+  #   exec:
+  #     timeout: 15s
+  #     script:
+  #       cmd: "/bin/bash"
+  #       args: ["-c", "cd /Users/akusingh/Testing/Tibtunnel_CIC-2 && cat ~/.tibtunnel/credentials"]
         #./tibtunnel configure -a <<accessKey>>
-        capture:
-          stdout:
-            - name: output
-              match: "((?s).*)"
-    expect:
-      - name: output
-        operator: containsStr
-        value: "${suite.setup.code-injection.accesskey}"
+    #     capture:
+    #       stdout:
+    #         - name: output
+    #           match: "((?s).*)"
+    # expect:
+    #   - name: output
+    #     operator: containsStr
+    #     value: "${suite.setup.code-injection.accesskey}"
         
 #final status of our deployed tibcotunnelroute specific
   - name: state_of_tibcotunnelroute
