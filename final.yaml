@@ -64,7 +64,7 @@ tasks:
     exec:
       script:
         cmd: "sleep"
-        args: ["60"]
+        args: ["10"]
         
 # get all pods running for the specific deployment using labels for that deployment or shall we use for namespace ???
   - name: status_of_all_client-pods
